@@ -1,0 +1,23 @@
+[Unit]
+Description=IMAP IDLE to Dagu (%i)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=imap-dagu
+Group=imap-dagu
+EnvironmentFile=/etc/imap-dagu/%i.env
+ExecStart=/usr/local/bin/imap-dagu -config /etc/imap-dagu/%i.toml
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+# Use an absolute state directory and a Dagu home writable by this user.
+ReadWritePaths=/var/lib/imap-dagu /var/lib/dagu
+
+[Install]
+WantedBy=multi-user.target

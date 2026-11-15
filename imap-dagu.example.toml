@@ -1,0 +1,17 @@
+# One INBOX listener per config/process. Use a unique account and state directory.
+account = "support"
+state_dir = "/var/lib/imap-dagu/support"
+# Only affects a new state directory. false skips existing mail; true queues it.
+backfill = false
+
+[imap]
+host = "imap.example.com"
+port = 993
+username = "support@example.com"
+password_env = "IMAP_PASSWORD"
+
+[dagu]
+bin = "/usr/local/bin/dagu"
+dag = "email-received"
+# Optional isolated Dagu home; omitted uses Dagu's existing environment/config.
+# home = "/var/lib/dagu"

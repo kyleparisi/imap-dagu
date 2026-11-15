@@ -1,0 +1,4 @@
+/imap-dagu
+/imap-dagu.toml
+*.env
+/state/
