@@ -3,6 +3,7 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -116,5 +117,31 @@ func TestEventID(t *testing.T) {
 		assert.NotEqual(t, e.ID, subject("sales", 7, 42).ID)
 		assert.NotEqual(t, e.ID, subject("support", 8, 42).ID)
 		assert.NotEqual(t, e.ID, subject("support", 7, 43).ID)
+	})
+}
+
+func TestSyncShutdown(t *testing.T) {
+	subject := Processor.Sync
+	t.Run("An enqueue finishing during shutdown still saves its cursor", func(t *testing.T) {
+		store := Store{Dir: t.TempDir()}
+		require.NoError(t, store.Save(State{Version: 1, Source: "source", UIDValidity: 7, LastUID: 1}))
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		p := Processor{Store: store, Source: "source", Account: "support", Enqueue: func(_ context.Context, e Event) error { assert.Equal(t, uint32(2), e.UID); cancel(); return nil }}
+		m := &Mailbox{UIDValidity: 7, UIDNext: 4, Search: func(uint32) ([]uint32, error) { return []uint32{2, 3}, nil }}
+		require.ErrorIs(t, subject(p, ctx, m), context.Canceled)
+		state, err := store.Load()
+		require.NoError(t, err)
+		assert.Equal(t, uint32(2), state.LastUID)
+	})
+	t.Run("Ambiguous delivery never advances the cursor", func(t *testing.T) {
+		store := Store{Dir: t.TempDir()}
+		require.NoError(t, store.Save(State{Version: 1, Source: "source", UIDValidity: 7, LastUID: 1}))
+		p := Processor{Store: store, Source: "source", Account: "support", Enqueue: func(context.Context, Event) error { return fmt.Errorf("incomplete Dagu run: %w", ErrState) }}
+		m := &Mailbox{UIDValidity: 7, UIDNext: 3, Search: func(uint32) ([]uint32, error) { return []uint32{2}, nil }}
+		require.ErrorIs(t, subject(p, context.Background(), m), ErrState)
+		state, err := store.Load()
+		require.NoError(t, err)
+		assert.Equal(t, uint32(1), state.LastUID)
 	})
 }

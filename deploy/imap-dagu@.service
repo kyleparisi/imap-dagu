@@ -11,6 +11,10 @@ EnvironmentFile=/etc/imap-dagu/%i.env
 ExecStart=/usr/local/bin/imap-dagu -config /etc/imap-dagu/%i.toml
 Restart=on-failure
 RestartSec=10
+RestartPreventExitStatus=78
+# Signal only the listener first; allow bounded enqueue/recovery calls to finish.
+KillMode=mixed
+TimeoutStopSec=90
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true

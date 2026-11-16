@@ -20,7 +20,7 @@ import (
 func main() {
 	if err := run(); err != nil {
 		slog.Error("imap-dagu stopped", "error", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 func run() error {
@@ -31,9 +31,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	password := os.Getenv(cfg.IMAP.PasswordEnv)
-	if password == "" {
-		return errors.New("configured IMAP password environment variable is empty")
+	password, err := takePassword(cfg.IMAP.PasswordEnv)
+	if err != nil {
+		return err
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -100,4 +100,26 @@ func session(ctx context.Context, cfg config.Config, password string, p watch.Pr
 			return err
 		}
 	}
+}
+
+// EX_CONFIG prevents systemd from repeatedly logging in on operator-only errors.
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	if errors.Is(err, watch.ErrState) {
+		return 78
+	}
+	return 1
+}
+
+func takePassword(name string) (string, error) {
+	password := os.Getenv(name)
+	if err := os.Unsetenv(name); err != nil {
+		return "", fmt.Errorf("remove IMAP password from subprocess environment: %w", err)
+	}
+	if password == "" {
+		return "", errors.New("configured IMAP password environment variable is empty")
+	}
+	return password, nil
 }

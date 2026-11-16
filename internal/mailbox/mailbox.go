@@ -21,18 +21,22 @@ func Connect(ctx context.Context, cfg config.IMAP, password string) (*watch.Mail
 	dialer := &net.Dialer{Timeout: 15 * time.Second}
 	raw, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
 	if err != nil {
-		return nil, errors.New("IMAP connection failed")
+		return nil, fmt.Errorf("IMAP connection failed: %w", err)
 	}
 	conn := tls.Client(raw, &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12})
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 	if err = conn.HandshakeContext(ctx); err != nil {
 		conn.Close()
-		return nil, errors.New("IMAP TLS handshake failed")
+		return nil, fmt.Errorf("IMAP TLS handshake failed: %w", err)
 	}
 	return open(ctx, cfg, password, conn)
 }
 
 func open(ctx context.Context, cfg config.IMAP, password string, conn net.Conn) (*watch.Mailbox, error) {
+	return openWithTimeout(ctx, cfg, password, conn, 30*time.Second)
+}
+
+func openWithTimeout(ctx context.Context, cfg config.IMAP, password string, conn net.Conn, commandTimeout time.Duration) (*watch.Mailbox, error) {
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	failed := true
 	defer func() {
@@ -47,7 +51,7 @@ func open(ctx context.Context, cfg config.IMAP, password string, conn net.Conn) 
 		return nil, errors.New("IMAP greeting failed")
 	}
 	c.ErrorLog = log.New(io.Discard, "", 0)
-	c.Timeout = 30 * time.Second
+	c.Timeout = commandTimeout
 	if err = c.Login(cfg.Username, password); err != nil {
 		return nil, errors.New("IMAP authentication failed")
 	}
@@ -78,6 +82,9 @@ func open(ctx context.Context, cfg config.IMAP, password string, conn net.Conn) 
 	if err != nil {
 		return nil, errors.New("read-only INBOX selection failed")
 	}
+	if err = conn.SetDeadline(time.Time{}); err != nil {
+		return nil, fmt.Errorf("clear IMAP selection deadline: %w", err)
+	}
 	failed = false
 	return &watch.Mailbox{UIDValidity: status.UidValidity, UIDNext: status.UidNext,
 		Close: func() error { stop(); return c.Terminate() },
@@ -89,6 +96,9 @@ func open(ctx context.Context, cfg config.IMAP, password string, conn net.Conn) 
 			uids, err := c.UidSearch(criteria)
 			if err != nil {
 				return nil, errors.New("IMAP UID search failed")
+			}
+			if err = conn.SetDeadline(time.Time{}); err != nil {
+				return nil, fmt.Errorf("clear IMAP search deadline: %w", err)
 			}
 			return uids, nil
 		},
@@ -114,11 +124,14 @@ func open(ctx context.Context, cfg config.IMAP, password string, conn net.Conn) 
 				idleErr = <-done
 			case idleErr = <-done:
 			}
-			c.Timeout = 30 * time.Second
+			c.Timeout = commandTimeout
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if idleErr != nil {
 				return fmt.Errorf("IMAP IDLE ended: %w", idleErr)
 			}
-			return nil
+			return conn.SetDeadline(time.Time{})
 		},
 	}, nil
 }
