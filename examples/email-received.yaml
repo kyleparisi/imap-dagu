@@ -1,0 +1,12 @@
+name: email-received
+# Dagu must have queues enabled. Its scheduler runs queued jobs.
+queue: email
+params:
+  - EVENT_ID: ""
+  - ACCOUNT: ""
+  - MAILBOX: ""
+  - UIDVALIDITY: ""
+  - UID: ""
+steps:
+  - name: received
+    command: echo "Mail event ${EVENT_ID}, account ${ACCOUNT}, IMAP UID ${UID}"
